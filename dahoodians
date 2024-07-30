@@ -1,0 +1,269 @@
+-- Initialize Aimlock Variables
+getgenv().Prediction = 0.05
+getgenv().AimPart = "HumanoidRootPart"
+getgenv().Key = "Q" -- Default key bind
+getgenv().AutoPrediction = false -- Auto prediction is off by default
+getgenv().ToggleUIKey = Enum.KeyCode.RightShift -- Default toggle UI key
+getgenv().AimlockMode = "Toggle" -- Default aimlock mode
+getgenv().UnlockOnDeath = false -- Default unlock on death setting
+
+-- FOV Circle Variables
+getgenv().FOVEnabled = false -- Default FOV circle visibility
+getgenv().FOVRadius = 80 -- Default FOV circle radius
+getgenv().FOVColor = Color3.fromRGB(255, 255, 255) -- Default FOV circle color
+getgenv().FOVTransparency = 0.7 -- Default FOV circle transparency
+getgenv().FOVFilled = false -- Default FOV circle filled
+getgenv().FOVSides = 64 -- Default FOV circle sides
+getgenv().FOVThickness = 1 -- Default FOV circle thickness
+
+-- Variables (Service)
+local Players = game:GetService("Players")
+local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+local Camera = workspace.CurrentCamera
+
+-- Variables (regular)
+local LP = Players.LocalPlayer
+local Mouse = LP:GetMouse()
+
+local AimlockEnabled = false
+local Locked = false
+local Victim
+local SelectedKey = getgenv().Key:lower()
+
+-- FOV Circle Setup
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+FOVCircle.Radius = getgenv().FOVRadius
+FOVCircle.Filled = getgenv().FOVFilled
+FOVCircle.Color = getgenv().FOVColor
+FOVCircle.Visible = getgenv().FOVEnabled
+FOVCircle.Transparency = getgenv().FOVTransparency
+FOVCircle.NumSides = getgenv().FOVSides
+FOVCircle.Thickness = getgenv().FOVThickness
+
+-- Functions
+local function getClosest()
+    local closestPlayer
+    local shortestDistance = math.huge
+
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LP and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 and v.Character:FindFirstChild(getgenv().AimPart) then
+            local pos = Camera:WorldToViewportPoint(v.Character[getgenv().AimPart].Position)
+            local magnitude = (Vector2.new(pos.X, pos.Y) - Vector2.new(Mouse.X, Mouse.Y)).magnitude
+
+            if magnitude < getgenv().FOVRadius then
+                if magnitude < shortestDistance then
+                    closestPlayer = v
+                    shortestDistance = magnitude
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- Key press detection for Aimlock
+local function handleKeyPress(k)
+    if k:lower() == SelectedKey then
+        if getgenv().AimlockMode == "Toggle" then
+            if AimlockEnabled then
+                Locked = not Locked
+                if Locked then
+                    Victim = getClosest()
+                else
+                    Victim = nil
+                end
+            end
+        elseif getgenv().AimlockMode == "Hold" then
+            Locked = true
+            Victim = getClosest()
+        end
+    end
+end
+
+local function handleKeyRelease(k)
+    if k:lower() == SelectedKey and getgenv().AimlockMode == "Hold" then
+        Locked = false
+        Victim = nil
+    end
+end
+
+-- Connect key press and release events
+UIS.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        handleKeyPress(input.KeyCode.Name)
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        handleKeyRelease(input.KeyCode.Name)
+    end
+end)
+
+-- Smooth transition function
+local function lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+-- Loop update camera lock onto target
+RS.RenderStepped:Connect(function()
+    if Locked and Victim and Victim.Character and Victim.Character:FindFirstChild(getgenv().AimPart) then
+        local aimPart = Victim.Character[getgenv().AimPart]
+        local predictedPosition = aimPart.Position + (aimPart.Velocity * getgenv().Prediction)
+        local smoothPosition = lerp(Camera.CFrame.Position, predictedPosition, 0.2) -- Adjust 0.2 for smoother transitions
+        local direction = (predictedPosition - Camera.CFrame.Position).unit
+        local distance = (predictedPosition - Camera.CFrame.Position).magnitude
+
+        -- Ensure the camera does not get too close to the target
+        if distance > 5 then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, predictedPosition)
+        else
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, predictedPosition - direction * 5)
+        end
+    end
+
+    -- FOV Circle Update
+    FOVCircle.Position = Vector2.new(UIS:GetMouseLocation().X, UIS:GetMouseLocation().Y)
+    FOVCircle.Radius = getgenv().FOVRadius
+    FOVCircle.Filled = getgenv().FOVFilled
+    FOVCircle.Color = getgenv().FOVColor
+    FOVCircle.Visible = getgenv().FOVEnabled
+    FOVCircle.Transparency = getgenv().FOVTransparency
+    FOVCircle.NumSides = getgenv().FOVSides
+    FOVCircle.Thickness = getgenv().FOVThickness
+end)
+
+-- Auto prediction based on ping
+coroutine.wrap(function()
+    while wait(1) do
+        if getgenv().AutoPrediction then
+            local pingValue = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString()
+            local split = string.split(pingValue, ' ')
+            local ping = tonumber(split[1])
+
+            if ping < 40 then
+                getgenv().Prediction = 0.175
+            elseif ping < 50 then
+                getgenv().Prediction = 0.180
+            elseif ping < 60 then
+                getgenv().Prediction = 0.185
+            elseif ping < 70 then
+                getgenv().Prediction = 0.190
+            elseif ping < 80 then
+                getgenv().Prediction = 0.195
+            elseif ping < 90 then
+                getgenv().Prediction = 0.200
+            elseif ping < 105 then
+                getgenv().Prediction = 0.205
+            elseif ping < 110 then
+                getgenv().Prediction = 0.210
+            elseif ping < 125 then
+                getgenv().Prediction = 0.215
+            else
+                getgenv().Prediction = 0.220  -- Default value for pings higher than 125
+            end
+
+            print("Current Prediction Value: " .. getgenv().Prediction)
+        end
+    end
+end)()
+
+-- Character death event handling
+LP.CharacterAdded:Connect(function(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    humanoid.Died:Connect(function()
+        if getgenv().UnlockOnDeath then
+            Locked = false
+            Victim = nil
+        end
+    end)
+end)
+
+-- Show Notification
+StarterGui:SetCore("SendNotification", {
+    Title = "Script Info",
+    Text = "Made by @qmke - Minutes Free Script",
+    Duration = 5
+})
+
+-- GUI Setup
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/Splix"))()
+local window = library:new({textsize = 13.5, font = Enum.Font.RobotoMono, name = "Minutes", color = Color3.fromRGB(225, 58, 81)})
+local mainTab = window:page({name = "Main"})
+
+-- Aimlock Section
+local aimlockSection = mainTab:section({name = "Aimlock", side = "left", size = 150})
+aimlockSection:toggle({name = "Enable Aimlock", def = AimlockEnabled, callback = function(value)
+    AimlockEnabled = value
+end})
+
+aimlockSection:textbox({name = "Set Key", def = getgenv().Key, callback = function(value)
+    getgenv().Key = value:upper() -- Ensure the key is capitalized
+    SelectedKey = getgenv().Key:lower()
+end})
+
+aimlockSection:dropdown({name = "Aim Part", def = getgenv().AimPart, options = {"None", "Head", "HumanoidRootPart"}, callback = function(value)
+    getgenv().AimPart = value
+end})
+
+aimlockSection:dropdown({name = "Aimlock Mode", def = getgenv().AimlockMode, options = {"Toggle", "Hold"}, callback = function(value)
+    getgenv().AimlockMode = value
+end})
+
+-- Prediction Section
+local predictionSection = mainTab:section({name = "Prediction", side = "left", size = 100})
+predictionSection:toggle({name = "Auto Prediction", def = getgenv().AutoPrediction, callback = function(value)
+    getgenv().AutoPrediction = value
+end})
+
+predictionSection:textbox({name = "Prediction Value", def = tostring(getgenv().Prediction), callback = function(value)
+    getgenv().Prediction = tonumber(value) or 0.05 -- Set to default value if invalid
+end})
+
+-- FOV Section
+local fovSection = mainTab:section({name = "FOV Circle", side = "left", size = 210})
+fovSection:toggle({name = "Enable FOV Circle", def = getgenv().FOVEnabled, callback = function(value)
+    getgenv().FOVEnabled = value
+    FOVCircle.Visible = value
+end})
+
+fovSection:slider({name = "FOV Radius", min = 10, max = 300, def = getgenv().FOVRadius, callback = function(value)
+    getgenv().FOVRadius = value
+    FOVCircle.Radius = value
+end})
+
+fovSection:colorpicker({name = "FOV Color", def = getgenv().FOVColor, callback = function(value)
+    getgenv().FOVColor = value
+    FOVCircle.Color = value
+end})
+
+fovSection:slider({name = "FOV Transparency", min = 0, max = 1, def = getgenv().FOVTransparency, callback = function(value)
+    getgenv().FOVTransparency = value
+    FOVCircle.Transparency = value
+end})
+
+fovSection:toggle({name = "FOV Filled", def = getgenv().FOVFilled, callback = function(value)
+    getgenv().FOVFilled = value
+    FOVCircle.Filled = value
+end})
+
+fovSection:slider({name = "FOV Sides", min = 3, max = 128, def = getgenv().FOVSides, callback = function(value)
+    getgenv().FOVSides = value
+    FOVCircle.NumSides = value
+end})
+
+fovSection:slider({name = "FOV Thickness", min = 1, max = 10, def = getgenv().FOVThickness, callback = function(value)
+    getgenv().FOVThickness = value
+    FOVCircle.Thickness = value
+end})
+
+-- Reset Button
+local resetButtonSection = mainTab:section({name = "BullShii", side = "left", size = 150})
+resetButtonSection:button({name = "Force Reset", callback = function()
+    if LP.Character and LP.Character:FindFirstChild("Humanoid") then
+        LP.Character:BreakJoints() -- This will force reset the character
+    end
+end})
